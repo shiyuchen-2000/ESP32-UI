@@ -1,0 +1,81 @@
+menu "ESP UI Configuration"
+
+    config ESP_UI_LCD_H_RES
+        int "LCD horizontal resolution"
+        default 360
+
+    config ESP_UI_LCD_V_RES
+        int "LCD vertical resolution"
+        default 360
+
+    # QSPI pins to the ST77916 panel (Waveshare ESP32-S3-Touch-LCD-1.85B)
+    config ESP_UI_PIN_NUM_SCLK
+        int "QSPI SCLK pin"
+        default 40
+
+    config ESP_UI_PIN_NUM_CS
+        int "QSPI CS pin"
+        default 21
+
+    config ESP_UI_PIN_NUM_SDIO0
+        int "QSPI DATA0 (SDIO0) pin"
+        default 46
+
+    config ESP_UI_PIN_NUM_SDIO1
+        int "QSPI DATA1 (SDIO1) pin"
+        default 45
+
+    config ESP_UI_PIN_NUM_SDIO2
+        int "QSPI DATA2 (SDIO2) pin"
+        default 42
+
+    config ESP_UI_PIN_NUM_SDIO3
+        int "QSPI DATA3 (SDIO3) pin"
+        default 41
+
+    config ESP_UI_PIN_NUM_LCD_RST
+        int "LCD reset GPIO (-1 to skip, reset released separately)"
+        default 3
+
+    config ESP_UI_PIN_NUM_BK_LIGHT
+        int "Backlight pin (-1 if none)"
+        default 5
+
+    config ESP_UI_BK_LIGHT_ON_LEVEL
+        int "Backlight on level (0 or 1)"
+        default 1
+
+    config ESP_UI_BK_LIGHT_PWM
+        bool "Backlight uses LEDC PWM (enables dimming)"
+        default y
+
+    config ESP_UI_TIMEZONE
+        string "Timezone for the real-time clock (POSIX TZ string)"
+        default "CST-8"
+
+    config ESP_UI_LCD_PCLK_HZ
+        int "LCD pixel clock (Hz) for the fast panel IO"
+        default 80000000
+
+    config ESP_UI_LVGL_DRAW_BUF_LINES
+        int "Number of display lines in each LVGL draw buffer"
+        default 20
+
+    config ESP_UI_LCD_SWAP_RGB565
+        bool "Swap RGB565 byte order before sending to panel"
+        default y
+
+    # Touch orientation (CST816S)
+    config ESP_UI_TOUCH_SWAP_XY
+        bool "Touch: swap X/Y"
+        default n
+
+    config ESP_UI_TOUCH_MIRROR_X
+        bool "Touch: mirror X"
+        default n
+
+    config ESP_UI_TOUCH_MIRROR_Y
+        bool "Touch: mirror Y"
+        default n
+
+endmenu
