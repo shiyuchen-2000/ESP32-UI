@@ -117,7 +117,7 @@ idf.py -p COM3 flash monitor
 
 添加应用**不需要修改任何导航代码**，三步即可：
 
-**1. 新建 `main/my_app.c`**，实现创建函数（返回一个屏幕对象，交给 shell 管理）：
+**1. 新建 `main/apps/my_app.c`**，实现创建函数（返回一个屏幕对象，交给 shell 管理）：
 
 ```c
 #include "ui_theme.h"
@@ -146,9 +146,9 @@ lv_obj_t *my_app_create(int id)
 
 若应用有内部子页需要返回支持，再实现 `can_back()` / `back()` 并填入。
 
-**3. 在 `main/CMakeLists.txt` 的 `SRCS` 列表末尾加入 `"my_app.c"`**，然后重新编译烧录。
+**3. 在 `main/CMakeLists.txt` 的 `SRCS` 列表加入 `"apps/my_app.c"`**，然后重新编译烧录。
 
-图标可选：把 SVG 转成 `lv_image_dsc_t`（可用 LVGL 官方 `lv_font_conv` 工具生成，或参考项目内 `ui_icons.h` 的格式），填进 `.icon` 字段，桌面圆圈内会显示真实图标，否则显示 `.glyph` 字母。
+图标可选：把 SVG 转成 `lv_image_dsc_t`（可用 LVGL 官方 `lv_font_conv` 工具生成，或参考 `icons/ui_icons.h` 的格式），填进 `.icon` 字段，桌面圆圈内会显示真实图标，否则显示 `.glyph` 字母。
 
 ## 导航功能（MotoNav 集成）
 
@@ -167,41 +167,45 @@ lv_obj_t *my_app_create(int id)
 esp_ui/
 ├── main/
 │   ├── main.c               # 入口：LCD/触摸/LVGL 初始化、任务创建、外设装配
-│   ├── CMakeLists.txt       # 组件源文件清单（新增 .c 必须登记）
+│   ├── CMakeLists.txt       # 组件源文件清单（新增 .c 必须登记，路径含分类目录）
 │   ├── Kconfig.projbuild    # ESP UI Configuration（引脚、分辨率、时区等）
 │   ├── idf_component.yml    # 组件依赖
-│   ├── ui_shell.[ch]        # ★ 导航壳：桌面/应用/多任务 + 应用生命周期
-│   ├── ui_desktop.[ch]      # ★ 桌面启动器（图标环分页 + 状态指示）
-│   ├── ui_multitask.[ch]    # ★ 多任务切换器
-│   ├── ui_theme.[ch]        # ★ 调色板 + 应用注册表（扩展入口）
-│   ├── ui_fonts.h           # ★ 字体集中注册
-│   ├── gesture.[ch]         # ★ 手势识别
-│   ├── auto_rotate.[ch]     # ★ 屏幕自动旋转
-│   ├── ui_app.[ch]          # 占位应用模板
-│   ├── ui_clock.[ch]        # 示例：时钟 + clock_faces.c 表盘注册表
-│   ├── ui_settings.[ch]     # 示例：设置（亮度/音量/WiFi/旋转…）
-│   ├── ui_music.[ch]        # 示例：音乐遥控（BLE）
-│   ├── ui_nav.[ch]          # 示例：导航（MotoNav）
-│   ├── nav_proto.[ch]       # MotoNav 文本协议解析/状态
-│   ├── nav_ble.[ch]         # NimBLE 外设 + NUS
-│   ├── nav_map.[ch]         # 栅格地图渲染（PSRAM）
-│   ├── ui_gforce.[ch]       # 示例：G 力仪表
-│   ├── ui_timer.[ch]        # 示例：赛车秒表
-│   ├── ui_wifi.[ch]         # WiFi 设置页
-│   ├── wifi_mgr.[ch]        # WiFi 管理（SoftAP 配网 + STA + NTP）
-│   ├── audio.[ch]           # ES8311 音频（I2S + 提示音任务）
-│   ├── battery.[ch]         # BQ27220 电量计
-│   ├── qmi8658.[ch]         # IMU 驱动
-│   ├── rtc_pcf85063.[ch]    # RTC 驱动
-│   ├── st77916_init.c       # 屏幕版本检测 + 初始化序列
-│   ├── touch_cst816s.[ch]   # 触摸驱动（共享 I2C 总线）
-│   ├── backlight.h          # 背光控制
-│   ├── ui_icons.h           # 桌面图标（SVG 转换）
-│   ├── ui_music_icons.h     # 音乐按钮图标
-│   ├── clock_faces.[ch]     # 表盘注册表
-│   ├── clock_big_font.c     # 大字时钟字体（Montserrat 96px）
-│   ├── hooge*.c             # 数字字体（17/20/25/36/55px）
-│   └── misans_*.c           # 中文字体（14/16/20/28px，字形子集）
+│   ├── core/                # ★ UI 框架核心
+│   │   ├── ui_shell.[ch]        # 导航壳：桌面/应用/多任务 + 应用生命周期
+│   │   ├── ui_desktop.[ch]      # 桌面启动器（图标环分页 + 状态指示）
+│   │   ├── ui_multitask.[ch]    # 多任务切换器
+│   │   ├── ui_theme.[ch]        # 调色板 + 应用注册表（扩展入口）
+│   │   ├── ui_fonts.h           # 字体集中注册
+│   │   ├── ui_app.[ch]          # 占位应用模板
+│   │   ├── gesture.[ch]         # 手势识别
+│   │   └── auto_rotate.[ch]     # 屏幕自动旋转
+│   ├── apps/                # 示例应用（可替换）
+│   │   ├── ui_clock.[ch] + clock_faces.[ch]   # 时钟 + 表盘注册表
+│   │   ├── ui_settings.[ch] + ui_wifi.[ch]    # 设置 + WiFi 子页
+│   │   ├── ui_music.[ch]          # 音乐遥控（BLE）
+│   │   ├── ui_nav.[ch]            # 导航（MotoNav）
+│   │   ├── ui_gforce.[ch]         # G 力仪表
+│   │   └── ui_timer.[ch]          # 赛车秒表
+│   ├── nav/                 # 导航数据链路
+│   │   ├── nav_ble.[ch]           # NimBLE 外设 + NUS
+│   │   ├── nav_proto.[ch]         # MotoNav 文本协议解析/状态
+│   │   └── nav_map.[ch]           # 栅格地图渲染（PSRAM）
+│   ├── drivers/             # 硬件驱动（换板只改这层）
+│   │   ├── st77916_init.c         # 屏幕版本检测 + 初始化序列
+│   │   ├── touch_cst816s.[ch]     # 触摸（共享 I2C 总线）
+│   │   ├── qmi8658.[ch]           # IMU
+│   │   ├── rtc_pcf85063.[ch]      # RTC
+│   │   ├── battery.[ch]           # BQ27220 电量计
+│   │   ├── audio.[ch]             # ES8311 音频（I2S + 提示音）
+│   │   ├── wifi_mgr.[ch]          # WiFi（SoftAP 配网 + STA + NTP）
+│   │   └── backlight.h            # 背光控制
+│   ├── fonts/               # 字体数据（生成文件）
+│   │   ├── misans_*.c             # 中文（14/16/20/28px 字形子集）
+│   │   ├── hooge*.c               # 数字（17/20/25/36/55px）
+│   │   └── clock_big_font.c       # 大字时钟（Montserrat 96px）
+│   └── icons/               # 图标位图
+│       ├── ui_icons.h             # 桌面图标
+│       └── ui_music_icons.h       # 音乐按钮图标
 ├── partitions.csv           # 自定义分区表
 ├── sdkconfig.defaults       # 默认编译配置（含 ESP UI 选项）
 ├── sdkconfig                # 本地生成，不入库
@@ -210,7 +214,7 @@ esp_ui/
 └── README.md
 ```
 
-带 ★ 的为**框架核心**，其余应用与驱动均为可替换/参考实现。
+带 ★ 的 `core/` 为**框架核心**，`apps/` 为可替换的示例应用，`drivers/` 为换板时只需改动的硬件驱动层。
 
 ## 主要配置项（menuconfig → ESP UI Configuration）
 

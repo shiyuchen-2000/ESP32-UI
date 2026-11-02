@@ -2,6 +2,16 @@
 # component file is also evaluated in script mode), and a plain GLOB silently
 # misses new files until a reconfigure. Keep the explicit list: when adding a
 # new .c, add it here too.
-idf_component_register(SRCS "ui_music.c" "main.c" "st77916_init.c" "touch_cst816s.c" "audio.c" "wifi_mgr.c" "battery.c" "qmi8658.c" "auto_rotate.c" "rtc_pcf85063.c" "nav_ble.c" "nav_proto.c" "nav_map.c" "ui_nav.c" "ui_theme.c" "ui_shell.c" "ui_desktop.c" "ui_app.c" "ui_multitask.c" "ui_settings.c" "ui_wifi.c" "ui_gforce.c" "ui_timer.c" "ui_clock.c" "clock_faces.c" "clock_big_font.c" "hooge55.c" "hooge36.c" "hooge25.c" "hooge20.c" "hooge17.c" "misans_14.c" "misans_16.c" "misans_20.c" "misans_28.c" "gesture.c"
-                       INCLUDE_DIRS "."
+idf_component_register(SRCS "main.c"
+                            "core/ui_shell.c" "core/ui_desktop.c" "core/ui_multitask.c"
+                            "core/ui_theme.c" "core/ui_app.c" "core/gesture.c" "core/auto_rotate.c"
+                            "apps/ui_clock.c" "apps/clock_faces.c" "apps/ui_settings.c" "apps/ui_wifi.c"
+                            "apps/ui_music.c" "apps/ui_nav.c" "apps/ui_gforce.c" "apps/ui_timer.c"
+                            "nav/nav_ble.c" "nav/nav_proto.c" "nav/nav_map.c"
+                            "drivers/st77916_init.c" "drivers/touch_cst816s.c" "drivers/qmi8658.c"
+                            "drivers/rtc_pcf85063.c" "drivers/battery.c" "drivers/audio.c" "drivers/wifi_mgr.c"
+                            "fonts/misans_14.c" "fonts/misans_16.c" "fonts/misans_20.c" "fonts/misans_28.c"
+                            "fonts/hooge17.c" "fonts/hooge20.c" "fonts/hooge25.c" "fonts/hooge36.c" "fonts/hooge55.c"
+                            "fonts/clock_big_font.c"
+                       INCLUDE_DIRS "." "core" "apps" "nav" "drivers" "fonts" "icons"
                        PRIV_REQUIRES esp_driver_spi esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_gpio esp_lcd esp_timer esp_codec_dev esp_wifi esp_netif nvs_flash esp_event lwip bt)
