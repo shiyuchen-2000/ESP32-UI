@@ -40,7 +40,25 @@
 #define SMOOTH_K_MIN 0.06f /* strongest damping while the road is jittering */
 #define JIT_TAU      0.25f /* low-pass of the frame-to-frame jitter estimate */
 #define JIT_GAIN     2.2f  /* how hard a jittery reading pushes K toward the min */
-#define DEADZONE_G   0.05f /* soft-pull the ball to centre below this |G| */
+#define DEADZONE_G   0.08f /* soft-pull the ball to centre below this |G| */
+
+/* Front-end anti-vibration: fixed low-pass on the raw accel (fc ~11 Hz) that
+ * strips engine/road vibration before the adaptive EMA sees it. Real braking/
+ * cornering is <5 Hz and passes through. */
+#define ACC_FILT_K   0.7f
+
+/* Calibration stillness check: a tap only locks the gravity direction when the
+ * last CAL_STILL_FRAMES frames were all near-stationary (amplitude ~1G and
+ * small frame-to-frame change). On a vibrating handlebar this stops a tap from
+ * locking a spurious direction, which used to amplify the jitter. */
+#define CAL_STILL_FRAMES  12
+#define CAL_STILL_AMP_LO  0.90f
+#define CAL_STILL_AMP_HI  1.10f
+#define CAL_STILL_DELTA   0.06f
+
+/* Minimum ball movement (px) per frame; below this the ball holds position, so
+ * residual micro-jitter is invisible. */
+#define MIN_MOVE_PX       2
 
 #define ACC_LP      0.15f /* low-pass of raw accel = gravity estimate while still */
 #define STILL_G_DEV 0.06f /* |a| must be within this of 1G to adapt the gravity dir */
@@ -65,13 +83,19 @@ static lv_obj_t *s_cal_ov = NULL;      /* calibration overlay (child of the scre
 static float s_u[3] = { 0.0f, 0.0f, 1.0f }; /* gravity "up" unit vector, sensor frame */
 static bool  s_calibrated = false;
 static uint32_t s_frames = 0;          /* frames since this screen opened */
+static float s_filt[3] = { 0, 0, 0 };  /* vibration low-passed accel (front-end) */
 static float s_a[3] = { 0, 0, 0 };     /* low-passed accel (= gravity while still) */
 static float s_fast[3] = { 0, 0, 0 };  /* ~70ms average: the calibration sample */
 static float s_dx = 0.0f, s_dy = 0.0f; /* smoothed horizontal G on the screen axes */
 static float s_jit = 0.0f;             /* per-frame jitter estimate (for adaptive K) */
 static float s_peak = 0.0f;
+static float s_hist_amp[CAL_STILL_FRAMES];   /* ring: recent accel magnitudes */
+static float s_hist_delta[CAL_STILL_FRAMES]; /* ring: recent frame-to-frame change */
+static uint32_t s_hist_n = 0;                /* frames recorded so far */
+static int   s_prev_bx = 0, s_prev_by = 0;   /* last ball position (min-move filter) */
 static lv_obj_t *s_g_label = NULL;     /* big current-G number */
 static lv_obj_t *s_pk_label = NULL;    /* peak-G (session max) */
+static lv_obj_t *s_cal_hint = NULL;    /* calibration overlay: stillness/retry hint */
 
 /* Project sensor axis idx (0/1/2 = X/Y/Z) onto the horizontal plane (the plane
  * perpendicular to the gravity direction u), as a unit vector. Falls back to
@@ -142,17 +166,25 @@ static bool gforce_nvs_load(void)
 /* ------------------------------------------------------------------ */
 static void calib_done_cb(lv_event_t *e)
 {
-    /* Take the ~70ms average of the *raw* readings as the gravity reference
-     * (the user is asked to hold the bike still). Using the slow low-pass here
-     * was wrong: it carries values from earlier in the ride, so a tap made
-     * shortly after opening the screen could lock in a direction that was not
-     * the real "up" - the projection then leaked gravity into the display and
-     * the ball sat still (or off-centre) under throttle/brake. Ignore the tap
-     * unless the magnitude really is ~1G (readings taken mid-ride are not). */
-    float gm = sqrtf(s_fast[0] * s_fast[0] + s_fast[1] * s_fast[1] + s_fast[2] * s_fast[2]);
-    if (gm < 0.9f || gm > 1.1f) {
+    /* The gravity reference is the ~70ms average of the readings. Unlike before
+     * (a single near-1G sample was enough), a tap now only locks when the last
+     * CAL_STILL_FRAMES frames were all near-stationary. On a vibrating
+     * handlebar a single 70ms sample is almost never truly "still", so this
+     * stops a tap from locking a spurious direction that amplifies the jitter. */
+    if (s_hist_n < CAL_STILL_FRAMES) {
         return;
     }
+    for (int i = 0; i < CAL_STILL_FRAMES; i++) {
+        float amp = s_hist_amp[i];
+        float dlt = s_hist_delta[i];
+        if (amp < CAL_STILL_AMP_LO || amp > CAL_STILL_AMP_HI || dlt > CAL_STILL_DELTA) {
+            if (s_cal_hint) {
+                lv_label_set_text(s_cal_hint, "未保持静止，\n请完全静止后点击");
+            }
+            return;   /* keep the overlay; let the user try again */
+        }
+    }
+    float gm = sqrtf(s_fast[0] * s_fast[0] + s_fast[1] * s_fast[1] + s_fast[2] * s_fast[2]);
     float inv = 1.0f / gm;
     s_u[0] = s_fast[0] * inv;
     s_u[1] = s_fast[1] * inv;
@@ -200,6 +232,15 @@ static void show_calib_overlay(lv_obj_t *scr)
     lv_obj_set_width(body, 240);
     lv_obj_align(body, LV_ALIGN_CENTER, 0, 0);
 
+    /* retry/status hint, filled in by calib_done_cb */
+    s_cal_hint = lv_label_create(ov);
+    lv_label_set_text(s_cal_hint, "");
+    lv_obj_set_style_text_color(s_cal_hint, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_text_font(s_cal_hint, &misans_14, 0);
+    lv_label_set_long_mode(s_cal_hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_cal_hint, 240);
+    lv_obj_align(s_cal_hint, LV_ALIGN_CENTER, 0, 78);
+
     lv_obj_t *skip = lv_button_create(ov);
     lv_obj_set_style_bg_color(skip, lv_color_hex(UI_COLOR_BG_ELEV), 0);
     lv_obj_set_style_bg_opa(skip, LV_OPA_COVER, 0);
@@ -246,7 +287,8 @@ static void screen_delete_cb(lv_event_t *e)
     if (s_timer && lv_event_get_target(e) == s_timer_owner) {
         lv_timer_pause(s_timer);
     }
-    s_cal_ov = NULL; /* overlay is a child of this screen; drop the stale pointer */
+    s_cal_ov = NULL;    /* overlay is a child of this screen; drop the stale pointer */
+    s_cal_hint = NULL;  /* same for the hint label */
 }
 
 static void gforce_timer_cb(lv_timer_t *t)
@@ -257,23 +299,52 @@ static void gforce_timer_cb(lv_timer_t *t)
     }
     float a[3] = { x / 1000.0f, y / 1000.0f, z / 1000.0f }; /* read_accel returns mg */
 
+    /* Front-end low-pass: strip engine/road vibration (high-freq) before any
+     * other processing. Real braking/cornering is low-freq and passes through. */
+    if (s_frames == 0) {
+        for (int i = 0; i < 3; i++) {
+            s_filt[i] = a[i];
+        }
+    }
+    float af[3];
+    for (int i = 0; i < 3; i++) {
+        s_filt[i] += (a[i] - s_filt[i]) * ACC_FILT_K;
+        af[i] = s_filt[i];
+    }
+
     /* Seed both estimates from the first frame after the screen opens. They are
      * static across screens, and a leftover value from the previous visit
      * (captured mid-ride) would need ~1s to converge - time the one-tap
      * calibration does not have. */
     if (s_frames == 0) {
         for (int i = 0; i < 3; i++) {
-            s_a[i] = a[i];
-            s_fast[i] = a[i];
+            s_a[i] = af[i];
+            s_fast[i] = af[i];
         }
     }
 
-    /* low-pass the raw vector: this tracks gravity when the device is still */
+    /* low-pass the filtered vector: this tracks gravity when the device is still */
     for (int i = 0; i < 3; i++) {
-        s_a[i] += (a[i] - s_a[i]) * ACC_LP;
-        s_fast[i] += (a[i] - s_fast[i]) * 0.5f;   /* ~70ms, for calibration */
+        s_a[i] += (af[i] - s_a[i]) * ACC_LP;
+        s_fast[i] += (af[i] - s_fast[i]) * 0.5f;   /* ~70ms, for calibration */
     }
     float gm = sqrtf(s_a[0] * s_a[0] + s_a[1] * s_a[1] + s_a[2] * s_a[2]);
+
+    /* Record the recent-stillness history used by calibration. After filtering,
+     * a vibrating handlebar shows a large frame-to-frame change / off-1G
+     * magnitude, so the stillness check in calib_done_cb fails on it. */
+    float cal_amp = sqrtf(af[0] * af[0] + af[1] * af[1] + af[2] * af[2]);
+    float cal_delta = fabsf(af[0] - s_a[0]) + fabsf(af[1] - s_a[1]) + fabsf(af[2] - s_a[2]);
+    if (s_hist_n < CAL_STILL_FRAMES) {
+        s_hist_amp[s_hist_n] = cal_amp;
+        s_hist_delta[s_hist_n] = cal_delta;
+        s_hist_n++;
+    } else {
+        static uint32_t hist_idx = 0;   /* circular: keep the most recent window */
+        s_hist_amp[hist_idx] = cal_amp;
+        s_hist_delta[hist_idx] = cal_delta;
+        hist_idx = (hist_idx + 1) % CAL_STILL_FRAMES;
+    }
 
     /* Once calibrated, u is FROZEN. Adapting it while riding folded the very
      * acceleration we want to show into the gravity baseline: a sustained
@@ -286,7 +357,7 @@ static void gforce_timer_cb(lv_timer_t *t)
      * already agrees with u (< ~6 deg). */
     if (!s_calibrated) {
         float dev = fabsf(gm - 1.0f);
-        float delta = fabsf(a[0] - s_a[0]) + fabsf(a[1] - s_a[1]) + fabsf(a[2] - s_a[2]);
+        float delta = fabsf(af[0] - s_a[0]) + fabsf(af[1] - s_a[1]) + fabsf(af[2] - s_a[2]);
         bool adapt = (dev < STILL_G_DEV && delta < STILL_DELTA);
         if (adapt && s_frames >= GRAV_FAST_N) {
             float dot = (s_a[0] * s_u[0] + s_a[1] * s_u[1] + s_a[2] * s_u[2]) / gm;
@@ -308,9 +379,9 @@ static void gforce_timer_cb(lv_timer_t *t)
     }
     s_frames++;
 
-    /* dynamic (horizontal) G = raw reading minus its gravity component */
-    float dot = a[0] * s_u[0] + a[1] * s_u[1] + a[2] * s_u[2];
-    float d[3] = { a[0] - dot * s_u[0], a[1] - dot * s_u[1], a[2] - dot * s_u[2] };
+    /* dynamic (horizontal) G = filtered reading minus its gravity component */
+    float dot = af[0] * s_u[0] + af[1] * s_u[1] + af[2] * s_u[2];
+    float d[3] = { af[0] - dot * s_u[0], af[1] - dot * s_u[1], af[2] - dot * s_u[2] };
 
     /* Screen axes (both projected onto the horizontal plane, so they rotate
      * with the mount): sensor +X -> screen-right, sensor +Y -> screen-up (the
@@ -369,6 +440,15 @@ static void gforce_timer_cb(lv_timer_t *t)
      * relative to the sensor axes while the rest of the UI rotated. */
     int bx = (int)(180.0f + px);
     int by = (int)(180.0f - py);
+    /* Minimum-move filter: below MIN_MOVE_PX the ball holds its last position,
+     * so residual micro-jitter is invisible (a real event moves far more). */
+    int mx = bx - s_prev_bx, my = by - s_prev_by;
+    if (mx * mx + my * my < MIN_MOVE_PX * MIN_MOVE_PX) {
+        bx = s_prev_bx;
+        by = s_prev_by;
+    }
+    s_prev_bx = bx;
+    s_prev_by = by;
     auto_rotate_transform_touch(&bx, &by);
     lv_obj_set_pos(s_ball, bx - BALL_R, by - BALL_R);
 
@@ -405,6 +485,8 @@ lv_obj_t *ui_gforce_create(int id)
     s_peak = 0.0f;
     s_dx = s_dy = 0.0f;
     s_jit = 0.0f;
+    s_hist_n = 0;
+    s_prev_bx = s_prev_by = 0;
     s_calibrated = gforce_nvs_load(); /* restore a saved calibration, if any */
 
     if (!s_imu_ok) {
