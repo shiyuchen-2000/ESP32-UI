@@ -30,6 +30,7 @@
 #include "lvgl.h"
 
 #include "ui_shell.h"
+#include "boot_anim.h"
 #include "nav_ble.h"
 #include "gesture.h"
 #include "backlight.h"
@@ -266,16 +267,15 @@ static void touch_init(lv_display_t *display)
 /* ------------------------------------------------------------------ */
 void app_main(void)
 {
-    /* NVS first: backlight_init() below reads the stored brightness and the
-     * audio / wifi / BLE modules also use NVS (repeated init is a no-op). */
+    /* NVS first: the audio / wifi / BLE modules use NVS (repeated init is a
+     * no-op). Backlight is enabled later, after the LCD/LVGL are ready, so the
+     * panel never shows a white flash. */
     esp_err_t nerr = nvs_flash_init();
     if (nerr == ESP_ERR_NVS_NO_FREE_PAGES || nerr == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         nerr = nvs_flash_init();
     }
     ESP_ERROR_CHECK(nerr);
-
-    backlight_init();
 
     // Hardware reset the LCD on GPIO3 (low then high), per the official BSP
     if (ESP_UI_PIN_RST >= 0) {
@@ -411,6 +411,11 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &cbs, display));
 
+    /* Black default screen: avoids a white flash between LVGL start and the
+     * boot splash (peripheral init runs in between). */
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
+
     ESP_LOGI(TAG, "Create LVGL task");
     /* Pin the GUI to Core 0 so it never wanders onto Core 1 where the WiFi
      * driver runs (keeps the WiFi ISR from being starved during display
@@ -449,9 +454,13 @@ void app_main(void)
     ESP_LOGI(TAG, "Battery: %d mV, %d%%, state=%d, cur=%+d mA",
              battery_get_mv(), battery_get_percent(), (int)battery_get_state(), battery_get_current_ma());
 
-    // Boot into the desktop
-    ESP_LOGI(TAG, "Show desktop");
+    /* Backlight on now that the panel and LVGL are ready and the screen is
+     * already black - no white flash. */
+    backlight_init();
+
+    // Boot splash (logo wipe + glow), then the desktop
+    ESP_LOGI(TAG, "Show boot splash");
     _lock_acquire(&lvgl_api_lock);
-    ui_shell_show_desktop();
+    boot_anim_start(ui_shell_show_desktop);
     _lock_release(&lvgl_api_lock);
 }
